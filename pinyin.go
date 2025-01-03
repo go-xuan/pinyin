@@ -21,21 +21,13 @@ var (
 	toneMap map[rune]rune
 	// 拼音字典
 	pinyinDic map[rune]string
-	hasInit   bool
-)
-
-type Fmt uint
-
-const (
-	WithTone   Fmt = iota // 带声调 例：quán
-	NoTone                // 不带声调，例：quan
-	FirstUpper            // 首字母大写，例：Quan
 )
 
 type Pinyin struct {
-	chinese string
-	fmt     Fmt
-	split   string
+	withTone   bool
+	firstUpper bool
+	chinese    string
+	split      string
 }
 
 func init() {
@@ -47,80 +39,78 @@ func init() {
 		}
 	}
 	for k, v := range dictionary {
-		i, err := strconv.ParseInt(k, 16, 32)
-		if err != nil {
+		if i, err := strconv.ParseInt(k, 16, 32); err != nil {
 			continue
+		} else {
+			pinyinDic[rune(i)] = v
 		}
-		pinyinDic[rune(i)] = v
 	}
-	hasInit = true
 }
 
-// 默认带声调，拼音之间空格分隔
-func NewPinyin(s string) *Pinyin {
-	return &Pinyin{s, WithTone, " "}
-}
-
-func (py *Pinyin) Fmt(fmt Fmt) *Pinyin {
-	py.fmt = fmt
+// NewPinyin 默认带声调，拼音之间空格分隔
+func NewPinyin(cn string, split ...string) *Pinyin {
+	var py = &Pinyin{chinese: cn}
+	if len(split) > 0 && len(split[0]) > 0 {
+		py.split = split[0]
+	}
 	return py
 }
 
-func (py *Pinyin) Convert() string {
-	if !hasInit {
-		return ""
-	}
-	cnRunes := []rune(py.chinese)
+func (p *Pinyin) WithTone() *Pinyin {
+	p.withTone = true
+	return p
+}
+
+func (p *Pinyin) FirstUpper() *Pinyin {
+	p.firstUpper = true
+	return p
+}
+
+func (p *Pinyin) Convert() string {
+	runes := []rune(p.chinese)
 	pinyins := make([]string, 0)
-	var temp string
-	for i, cnRune := range cnRunes {
-		_, ok := pinyinDic[cnRune]
-		if !ok {
-			temp += string(cnRune)
-			if i == len(cnRunes)-1 {
-				pinyins = append(pinyins, temp)
+	var pinyin string
+	for i, cnRune := range runes {
+		if _, ok := pinyinDic[cnRune]; !ok {
+			pinyin += string(cnRune)
+			if i == len(runes)-1 {
+				pinyins = append(pinyins, pinyin)
 			}
 			continue
 		}
-		pinyin := convertPinyin(cnRune, py.fmt)
-		if len(temp) > 0 {
-			pinyins = append(pinyins, temp)
-			temp = ""
-		}
 		if len(pinyin) > 0 {
 			pinyins = append(pinyins, pinyin)
+			pinyin = ""
+		}
+		if py := convertPinyin(cnRune, p.withTone, p.firstUpper); len(py) > 0 {
+			pinyins = append(pinyins, py)
 		}
 	}
-	return strings.Join(pinyins, py.split)
+	return strings.Join(pinyins, p.split)
 }
 
 // 转成拼音
-func convertPinyin(cn rune, fmt Fmt) string {
-	py := pinyinDic[cn]
-	if py == "" {
-		return py
-	}
-	switch fmt {
-	case NoTone:
-		output := make([]rune, utf8.RuneCountInString(py))
-		count := 0
-		for _, t := range py {
-			neutral, ok := toneMap[t]
-			if ok {
-				output[count] = neutral
-			} else {
-				output[count] = t
+func convertPinyin(cn rune, withTone, firstUpper bool) string {
+	pinyin := pinyinDic[cn]
+	if pinyin != "" {
+		if !withTone {
+			runes, i := make([]rune, utf8.RuneCountInString(pinyin)), 0
+			for _, t := range pinyin {
+				if tone, ok := toneMap[t]; ok {
+					runes[i] = tone
+				} else {
+					runes[i] = t
+				}
+				i++
 			}
-			count++
+			pinyin = string(runes)
 		}
-		return string(output)
-	case FirstUpper:
-		sr := []rune(py)
-		if sr[0] > 32 {
-			sr[0] = sr[0] - 32
+		if firstUpper {
+			if sr := []rune(pinyin); sr[0] > 32 {
+				sr[0] = sr[0] - 32
+				pinyin = string(sr)
+			}
 		}
-		return string(sr)
-	default:
-		return py
 	}
+	return pinyin
 }
